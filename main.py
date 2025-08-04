@@ -1,32 +1,46 @@
-from aiogram import Bot, Dispatcher, executor, types
 import os
+from aiogram import Bot, Dispatcher, types
+from aiogram.types import Message
+from aiogram.filters import CommandStart
+from aiogram.enums import ParseMode
+from aiogram import F
+
+from aiogram import Router
+from aiogram.fsm.storage.memory import MemoryStorage
+from aiogram.utils.markdown import hlink
 import asyncio
 
-BOT_TOKEN = os.getenv("BOT_TOKEN")
-CHANNEL_ID = os.getenv("CHANNEL_ID")  # @channelusername или -1001234567890
-GROUP_ID = os.getenv("GROUP_ID")      # -1001234567890
+TOKEN = os.getenv("BOT_TOKEN")  # Токен задается через Render
+GROUP_ID = os.getenv("GROUP_ID")  # ID группы, например: "-1001234567890"
+CHANNEL_ID = os.getenv("CHANNEL_ID")  # ID канала, например: "-1009876543210"
 
-bot = Bot(token=BOT_TOKEN)
-dp = Dispatcher(bot)
+bot = Bot(token=TOKEN, parse_mode=ParseMode.HTML)
+dp = Dispatcher(storage=MemoryStorage())
+router = Router()
+dp.include_router(router)
 
-@dp.message_handler(commands=["start"])
-async def send_welcome(message: types.Message):
+
+@router.message(CommandStart())
+async def start_handler(message: Message):
     user_id = message.from_user.id
 
-    # Проверка подписки
-    member = await bot.get_chat_member(chat_id=CHANNEL_ID, user_id=user_id)
-    if member.status not in ["creator", "administrator", "member"]:
-        await message.reply("❌ Доступ запрещён. Подпишись на канал.")
+    # Проверка подписки на канал
+    try:
+        member = await bot.get_chat_member(CHANNEL_ID, user_id)
+        if member.status not in ["member", "administrator", "creator"]:
+            raise Exception("Not subscribed")
+    except:
+        await message.answer("Пожалуйста, подпишитесь на канал и попробуйте снова.")
         return
 
-    # Генерация одноразовой ссылки
-    invite_link = await bot.create_chat_invite_link(
-        chat_id=GROUP_ID,
-        member_limit=1,
-        expire_date=int(asyncio.get_event_loop().time()) + 300  # 5 минут
-    )
+    # Если подписка есть — приглашаем в группу
+    invite_link = await bot.create_chat_invite_link(chat_id=GROUP_ID, name="Auto link", creates_join_request=False)
+    await message.answer(f"Вы подписаны! Вот ваша ссылка на группу:\n{invite_link.invite_link}")
 
-    await message.reply(f"✅ Вот твоя одноразовая ссылка:\n{invite_link.invite_link}")
+
+async def main():
+    await dp.start_polling(bot)
+
 
 if __name__ == "__main__":
-    executor.start_polling(dp)
+    asyncio.run(main())
